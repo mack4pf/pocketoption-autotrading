@@ -1,0 +1,74 @@
+/* Custom component styles - using regular CSS since Tailwind CDN doesn't process @apply at build time */
+.btn-primary {
+  background-color: #00D1FF;
+  color: white;
+  font-weight: bold;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  transition: all 0.3s;
+  transform: translateY(0);
+  box-shadow: 0 10px 15px -3px rgba(0, 209, 255, 0.1);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.input-field {
+  width: 100%;
+  background-color: #252a40;
+  border: 1px solid #374151;
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  color: white;
+  transition: border-color 0.2s;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: #00D1FF;
+}
+
+.card {
+  background-color: #252a40;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  border: 1px solid #1f2937;
+}
+
+/* Ensure animations work */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out;
+}
