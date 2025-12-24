@@ -28,7 +28,11 @@ const server = http.createServer(app);
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('frontend/dist'));
+
+// Robust Static File Serving
+const frontendPath = path.join(__dirname, 'frontend', 'dist');
+console.log(`📦 Serving frontend from: ${frontendPath}`);
+app.use(express.static(frontendPath));
 
 // Handle React Routing, return all requests to React app
 app.get('*', (req, res, next) => {
@@ -36,8 +40,20 @@ app.get('*', (req, res, next) => {
     if (req.url.startsWith('/api') || req.url.startsWith('/socket.io')) {
         return next();
     }
-    const path = require('path');
-    res.sendFile(path.resolve(__dirname, 'frontend', 'dist', 'index.html'));
+
+    const indexPath = path.join(__dirname, 'frontend', 'dist', 'index.html');
+
+    // Check if file exists to avoid ugly 404s
+    const fs = require('fs');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).json({
+            error: 'Frontend build not found',
+            message: 'Please ensure "npm run build" has completed successfully.',
+            checked_path: indexPath
+        });
+    }
 });
 
 // Initialize Engines
