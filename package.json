@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "install-browsers": "npx playwright install chromium",
+    "build": "cd frontend && npm install && npm run build",
+    "install-browsers": "npx playwright install chromium --with-deps",
     "test": "echo \"No tests specified\" && exit 0",
     "setup": "node setup.js"
   },
