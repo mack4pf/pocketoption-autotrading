@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 300px;
+            padding: 20px;
+            font-family: sans-serif;
+            background: #0b0e11;
+            color: white;
+        }
+
+        .logo {
+            font-weight: 900;
+            font-size: 1.2rem;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+
+        .logo span {
+            color: #33c0ff;
+        }
+
+        .btn {
+            background: #33c0ff;
+            color: #0b0e11;
+            border: none;
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 900;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div className="logo">NIELS<span>AUTOTRADE</span></div>
+    <button id="capture" className="btn">Capture Session</button>
+    <div id="status" className="status">Login to Pocket Option first</div>
+    <script src="popup.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,21 @@
+{
+    "appId": "app.nielsautotrade.mobile",
+    "appName": "Niels Autotrade",
+    "webDir": "www",
+    "bundledWebRuntime": false,
+    "plugins": {
+        "CapacitorCookies": {
+            "enabled": true
+        },
+        "CapacitorHttp": {
+            "enabled": true
+        }
+    },
+    "server": {
+        "androidScheme": "https",
+        "allowNavigation": [
+            "pocketoption.com",
+            "*.pocketoption.com"
+        ]
+    }
+}

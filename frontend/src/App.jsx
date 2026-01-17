@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminSignals from './pages/AdminSignals';
 import Signals from './pages/Signals';
+import Landing from './pages/Landing';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
@@ -30,7 +31,8 @@ function App() {
     <Router>
       <div className="min-h-screen bg-primary text-gray-100 font-sans">
         <Routes>
-          <Route path="/" element={<Login />} />
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/admin" element={<AdminLogin />} />
 

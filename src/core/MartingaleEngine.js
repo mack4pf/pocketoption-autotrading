@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const SystemSettings = require('../models/SystemSettings');
 
 class MartingaleEngine {
     constructor() {
@@ -11,7 +12,7 @@ class MartingaleEngine {
      * @param {Object} user - The user document
      * @returns {Number} The amount to trade
      */
-    calculateNextAmount(user) {
+    async calculateNextAmount(user) {
         const settings = user.tradingSettings;
         const state = user.martingale;
 
@@ -21,7 +22,14 @@ class MartingaleEngine {
             return 1.0;
         }
 
-        // If martingale is disabled, always return base amount
+        // If martingale is disabled globally by ADMIN, always return base amount
+        const globalEnabled = await SystemSettings.getSetting('martingaleEnabledGlobal', true);
+        if (!globalEnabled) {
+            console.log(`ℹ️ Martingale disabled globally by Admin. Using base amount for user ${user._id}`);
+            return settings.defaultAmount;
+        }
+
+        // If martingale is disabled by user, always return base amount
         if (!settings.martingaleEnabled) {
             return settings.defaultAmount;
         }
@@ -59,14 +67,13 @@ class MartingaleEngine {
             // Increment on LOSS
             state.lossStreak++;
 
-            if (state.currentLevel < state.maxSteps) {
+            const maxSteps = state.maxSteps || 6;
+            if (state.currentLevel < maxSteps) {
                 state.currentLevel++;
                 console.log(`❌ User ${user._id} LOST. Increasing Martingale to Level ${state.currentLevel}.`);
             } else {
-                // Max steps reached - Optional: Reset or stay at max?
-                // Usually reset to avoid massive losses, or stay.
-                // Standard safest approach: Reset after max steps failure.
-                console.log(`⚠️ User ${user._id} LOST at Max Level (${state.maxSteps}). Resetting to 0.`);
+                // Max steps reached (6 times) - Reset to avoid massive losses.
+                console.log(`⚠️ User ${user._id} LOST at Max Level (${maxSteps}). Resetting to 0.`);
                 state.currentLevel = 0;
                 state.lossStreak = 0; // Reset streak too
             }

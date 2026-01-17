@@ -15,7 +15,14 @@ const userSchema = new mongoose.Schema({
         lastActivity: Date,
         browserSessionId: String,
         tradingPageUrl: String,
-        accountType: { type: String, default: 'demo' }
+        accountType: { type: String, default: 'demo' },
+        sharedSession: {
+            cookies: [mongoose.Schema.Types.Mixed],
+            localStorage: mongoose.Schema.Types.Mixed,
+            userAgent: String,
+            capturedAt: Date,
+            platform: { type: String, enum: ['android', 'ios', 'desktop', 'manual'] }
+        }
     },
 
     tradingSettings: {

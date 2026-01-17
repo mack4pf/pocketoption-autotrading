@@ -26,7 +26,11 @@ const app = express();
 const server = http.createServer(app);
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: ["*", "http://localhost:5173", "https://harlan-echolalic-ulysses.ngrok-free.dev"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+}));
 app.use(express.json());
 
 // Robust Static File Serving
@@ -74,8 +78,9 @@ mongoose.connect(process.env.MONGODB_URI)
 // Socket.io with CORS
 const io = socketIo(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: ["http://localhost:5173", "https://harlan-echolalic-ulysses.ngrok-free.dev"],
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 

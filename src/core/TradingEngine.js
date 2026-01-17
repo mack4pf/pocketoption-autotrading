@@ -35,7 +35,10 @@ class TradingEngine extends EventEmitter {
                     return;
                 }
 
-                console.log(`👤 Checking user: ${user.email} | Auto-Trading: ${user.tradingSettings.isAutoTrading} | Active: ${user.isActive}`);
+                console.log(`👤 Checking user: ${user.email}`);
+                console.log(`   - Auto-Trading: ${user.tradingSettings.isAutoTrading}`);
+                console.log(`   - Account Active: ${user.isActive}`);
+                console.log(`   - DB Connection Mark: ${user.pocketOptionConnection?.isConnected}`);
 
                 if (!user.isActive) {
                     console.log(`⏸️ User account ${user.email} is inactive. Skipping.`);
@@ -113,7 +116,7 @@ class TradingEngine extends EventEmitter {
         // 1. Calculate Amount using Martingale Engine
         let amount;
         try {
-            amount = this.martingaleEngine.calculateNextAmount(user);
+            amount = await this.martingaleEngine.calculateNextAmount(user);
             console.log(`💰 Calculated amount for ${user.email}: $${amount}`);
         } catch (e) {
             console.error(`❌ Martingale calculation failed for ${user.email}:`, e.message);
@@ -133,6 +136,9 @@ class TradingEngine extends EventEmitter {
         }
 
         try {
+            // 1.5. Set asset (REMOVED - Users must be on EURUSD)
+            // await this.setAsset(page, signalData.asset);
+
             // 2. Set trade amount
             await this.setAmount(page, amount);
 
@@ -194,6 +200,13 @@ class TradingEngine extends EventEmitter {
             try {
                 const element = await page.waitForSelector(selector, { timeout: 1500 });
                 if (element) {
+                    // Check current value before clearing
+                    const currentValue = await element.getAttribute('value') || await element.evaluate(el => el.value);
+                    if (currentValue === amount.toString()) {
+                        console.log(`   ✅ Amount already set to ${amount}. Skipping update.`);
+                        return true;
+                    }
+
                     await element.click();
                     await page.keyboard.press("Control+A");
                     await page.keyboard.press("Backspace");
@@ -240,50 +253,118 @@ class TradingEngine extends EventEmitter {
         }
     }
 
+    async setAsset(page, asset) {
+        console.log(`🔍 Selecting asset: ${asset}...`);
+
+        try {
+            // Check if already on the right asset
+            const currentAsset = await page.textContent('.current-symbol').catch(() => '');
+            if (currentAsset.toUpperCase().includes(asset.toUpperCase().replace('-OTC', ''))) {
+                console.log(`   ✅ Already on asset: ${asset}`);
+                return true;
+            }
+
+            // Click assets menu
+            await page.click('.current-symbol, .symbol-select').catch(() => { });
+            await page.waitForTimeout(1000);
+
+            // Search for asset
+            const searchInput = await page.waitForSelector('input[placeholder*="Search"], .search-input', { timeout: 3000 }).catch(() => null);
+            if (searchInput) {
+                await searchInput.fill(asset.replace('-OTC', ''));
+                await page.waitForTimeout(1000);
+            }
+
+            // Click the first matching asset in the list
+            const assetItem = await page.locator(`.assets-list-item:has-text("${asset}"), .symbol-item:has-text("${asset}")`).first();
+            await assetItem.click({ force: true });
+
+            console.log(`   ✅ Asset selected: ${asset}`);
+            await page.waitForTimeout(1000);
+            return true;
+        } catch (e) {
+            console.error(`   ⚠️ Failed to select asset ${asset} (might still be on default):`, e.message);
+            return false;
+        }
+    }
+
     async clickTradeButton(page, direction) {
         const directionUpper = direction.toUpperCase();
 
         // [ENHANCED SELECTORS]
-        const callSelectors = ['a.btn.btn-call', 'div.button-call', '.btn-call', 'text=HIGHER', 'text=CALL'];
-        const putSelectors = ['a.btn.btn-put', 'div.button-put', '.btn-put', 'text=LOWER', 'text=PUT'];
+        const callSelectors = [
+            'a.btn.btn-call',
+            'div.button-call',
+            '.btn-call',
+            'text=HIGHER',
+            'text=CALL',
+            '.up-button',
+            '.call-button'
+        ];
+        const putSelectors = [
+            'a.btn.btn-put',
+            'div.button-put',
+            '.btn-put',
+            'text=LOWER',
+            'text=PUT',
+            '.down-button',
+            '.put-button'
+        ];
 
         const selectors = directionUpper === 'CALL' ? callSelectors : putSelectors;
 
         console.log(`🚀 Clicking ${directionUpper} button...`);
 
+        // Try standard Playwright selectors first
         for (const selector of selectors) {
             try {
-                const button = await page.waitForSelector(selector, { timeout: 1500 });
-                if (button) {
+                const button = await page.locator(selector).first();
+                if (await button.isVisible({ timeout: 2000 })) {
                     await button.click({ force: true });
                     console.log(`✅ Clicked ${directionUpper} using: ${selector}`);
                     return true;
                 }
-            } catch (e) {
-                // Try next selector
-            }
+            } catch (e) { continue; }
         }
 
-        // Last ditch effort: find by class name in page evaluate
+        // Secondary Attempt: Specific class search via page.evaluate
+        console.log('   ⚠️ Selectors failed, trying aggressive JS click...');
         try {
             const clicked = await page.evaluate((dir) => {
+                const searchTerms = dir === 'CALL' ? ['call', 'up', 'higher', 'green'] : ['put', 'down', 'lower', 'red'];
+
+                // 1. Try by exact class
                 const className = dir === 'CALL' ? 'btn-call' : 'btn-put';
-                const btn = document.querySelector(`.${className}`) ||
-                    Array.from(document.querySelectorAll('a, button, div')).find(el =>
-                        el.textContent.includes(dir) || el.className.includes(className)
-                    );
+                let btn = document.querySelector(`.${className}`);
+                if (btn) { btn.click(); return true; }
+
+                // 2. Try by text or common naming patterns
+                const allElements = Array.from(document.querySelectorAll('a, button, div, span'));
+                btn = allElements.find(el => {
+                    const text = el.textContent.toLowerCase();
+                    const cls = el.className.toString().toLowerCase();
+                    return (searchTerms.some(t => text.includes(t)) || searchTerms.some(t => cls.includes(t))) &&
+                        el.getBoundingClientRect().width > 0;
+                });
+
                 if (btn) {
                     btn.click();
+                    // Also try to dispatch a mouse event if a simple click isn't enough
+                    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
                     return true;
                 }
                 return false;
             }, directionUpper);
 
             if (clicked) {
-                console.log(`✅ Clicked ${directionUpper} using JS Evaluate`);
+                console.log(`✅ Clicked ${directionUpper} using aggressive JS`);
                 return true;
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error(`   ❌ JS Click failed:`, e.message);
+        }
 
         console.error(`❌ ${directionUpper} button not found after all attempts`);
         throw new Error(`${directionUpper} button not found`);

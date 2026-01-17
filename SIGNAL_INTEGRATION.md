@@ -3,7 +3,7 @@
 This document explains how to send signals from an external application (like TradingView via Webhooks or a Python bot) to the **NielsAutoTrade** platform.
 
 ## 🔐 Authentication
-All external requests MUST include the `X-Admin-Secret` header for authorization.
+All external requests MUST include the `X-Admin-Secret` header for authorization.\
 
 **Header Name:** `X-Admin-Secret`  
 **Header Value:** `1234ea1` (Match the value in your `.env` file)

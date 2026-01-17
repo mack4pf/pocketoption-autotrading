@@ -19,16 +19,20 @@ This project uses **Playwright** to control a browser. Most cloud platforms (inc
 
 ### 2. Configure Build Settings
 Pxxl should detect the Node.js project. Use these settings:
-- **Build Command**: `npm run build && npm run install-browsers`
+- **Build Command**: `npm run build`
 - **Output Directory**: (Leave blank or `.` as the server serves the build)
 - **Start Command**: `npm start`
 
+> [!TIP]
+> If you use the **Docker** deployment (recommended), Pxxl will automatically use the `Dockerfile` and skip these settings.
+
 ### 3. Set Environment Variables
-Go to the **Environment Variables** section and add:
-- `MONGODB_URI`: Your MongoDB connection string.
-- `JWT_SECRET`: A secret string for logins.
-- `ADMIN_SECRET`: `1234ea1` (Match your external signals).
-- `PORT`: `3011` (Or the port Pxxl provides).
+Go to the **Environment Variables** section on Pxxl.app and add:
+- `MONGODB_URI`: Your MongoDB connection string (from Atlas).
+- `JWT_SECRET`: A long random string for securing logins.
+- `ADMIN_SECRET`: `1234ea1` (Used for external signal integration).
+- `ANTICAPTCHA_KEY`: Your Anti-Captcha API key.
+- `PORT`: `3011` (Pxxl will normally provide this, but you can set it).
 - `NODE_ENV`: `production`
 
 ---

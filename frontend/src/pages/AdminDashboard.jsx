@@ -13,7 +13,10 @@ import {
     faPlus,
     faUserShield,
     faBroadcastTower,
-    faCircleCheck
+    faCircleCheck,
+    faCogs,
+    faToggleOn,
+    faToggleOff
 } from '@fortawesome/free-solid-svg-icons';
 import { useModal } from '../context/ModalContext';
 
@@ -26,6 +29,8 @@ const AdminDashboard = () => {
     const [codes, setCodes] = useState([]);
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
+    const [settings, setSettings] = useState({ martingaleEnabledGlobal: true });
+    const [updatingSetting, setUpdatingSetting] = useState(false);
 
     // Modal states
     const [showCodeModal, setShowCodeModal] = useState(false);
@@ -36,14 +41,16 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [statsRes, usersRes, codesRes] = await Promise.all([
+            const [statsRes, usersRes, codesRes, settingsRes] = await Promise.all([
                 api.get('/admin/dashboard'),
                 api.get('/admin/users'),
-                api.get('/admin/access-codes')
+                api.get('/admin/access-codes'),
+                api.get('/admin/settings')
             ]);
             setStats(statsRes.data.stats);
             setUsers(usersRes.data.users);
             setCodes(codesRes.data.accessCodes);
+            setSettings(settingsRes.data.settings);
         } catch (error) {
             console.error("Failed to fetch admin data", error);
             showModal({
@@ -117,6 +124,20 @@ const AdminDashboard = () => {
         }
     };
 
+    const handleToggleGlobalMartingale = async () => {
+        setUpdatingSetting(true);
+        try {
+            const newValue = !settings.martingaleEnabledGlobal;
+            await api.put('/admin/settings', { key: 'martingaleEnabledGlobal', value: newValue });
+            setSettings({ ...settings, martingaleEnabledGlobal: newValue });
+            showModal({ title: 'Setting Updated', message: `Global Martingale strategy is now ${newValue ? 'ENABLED' : 'DISABLED'}.`, type: 'success' });
+        } catch (e) {
+            showModal({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update setting', type: 'error' });
+        } finally {
+            setUpdatingSetting(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
             {/* Admin Nav */}
@@ -167,6 +188,12 @@ const AdminDashboard = () => {
                         className={`px-6 py-2 rounded-lg font-medium transition-all ${activeTab === 'codes' ? 'bg-red-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
                     >
                         <FontAwesomeIcon icon={faKey} className="mr-2" /> Codes
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('settings')}
+                        className={`px-6 py-2 rounded-lg font-medium transition-all ${activeTab === 'settings' ? 'bg-red-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                    >
+                        <FontAwesomeIcon icon={faCogs} className="mr-2" /> System
                     </button>
                 </div>
 
@@ -364,6 +391,41 @@ const AdminDashboard = () => {
                                             ))}
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'settings' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-xl">
+                                    <div className="flex items-center gap-4 mb-8">
+                                        <div className="bg-blue-500/10 p-3 rounded-xl">
+                                            <FontAwesomeIcon icon={faCogs} className="text-blue-500 text-xl" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-bold text-white">Global Trading Settings</h3>
+                                            <p className="text-gray-500 text-sm">Configure system-wide parameters for all accounts</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        <div className="bg-gray-900/50 p-6 rounded-2xl border border-gray-700 flex items-center justify-between">
+                                            <div>
+                                                <h4 className="font-bold text-white mb-1">Global Martingale Strategy</h4>
+                                                <p className="text-xs text-gray-500">Enable/Disable Martingale for all users simultaneously</p>
+                                            </div>
+                                            <button
+                                                onClick={handleToggleGlobalMartingale}
+                                                disabled={updatingSetting}
+                                                className={`text-4xl transition-all ${updatingSetting ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={settings.martingaleEnabledGlobal ? faToggleOn : faToggleOff}
+                                                    className={settings.martingaleEnabledGlobal ? 'text-green-500' : 'text-gray-600'}
+                                                />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}

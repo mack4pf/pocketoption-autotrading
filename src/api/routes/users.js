@@ -4,54 +4,81 @@ const auth = require('../../middleware/auth');
 const User = require('../../models/User');
 
 /**
- * @route   POST /api/users/connect-pocketoption/start
- * @desc    Launch a new browser session and navigate to Pocket Option login
+ * @route   POST /api/users/connect-pocketoption/login
+ * @desc    Automated login with user's Pocket Option credentials
  */
-router.post('/connect-pocketoption/start', auth, async (req, res) => {
+router.post('/connect-pocketoption/login', auth, async (req, res) => {
     try {
         const user = req.user;
+        const { email, password, accountType } = req.body;
         const sessionManager = req.app.get('sessionManager');
 
-        console.log(`🚀 Starting Pocket Option connection for: ${user.email}`);
-
-        // Create browser session for this user
-        const session = await sessionManager.createSession(user._id.toString());
-
-        if (!session) {
-            throw new Error('Failed to create browser session');
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                error: 'Email and password are required'
+            });
         }
 
-        // Navigate to Pocket Option login
-        await sessionManager.navigateToLogin(user._id.toString());
+        const selectedAccountType = (accountType || 'DEMO').toUpperCase();
+        if (!['DEMO', 'REAL'].includes(selectedAccountType)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Account type must be either DEMO or REAL'
+            });
+        }
+
+        console.log(`🔐 Starting automated login for: ${user.email} → PO Account: ${email}`);
+
+        // Create browser session if not exists
+        let session = sessionManager.sessions.get(user._id.toString());
+        if (!session) {
+            console.log('📱 Creating new browser session...');
+            session = await sessionManager.createSession(user._id.toString());
+        }
+
+        // Perform automated login with captcha solving
+        const result = await sessionManager.loginWithCredentials(
+            user._id.toString(),
+            email,
+            password,
+            selectedAccountType
+        );
+
+        // Update user status (not verified yet - user needs to click verify)
+        await User.findByIdAndUpdate(user._id, {
+            'pocketOptionConnection': {
+                isConnected: false, // Not verified yet
+                connectionDate: new Date(),
+                lastActivity: new Date(),
+                browserSessionId: `session_${user._id}`,
+                accountType: result.accountType.toLowerCase(),
+                verified: false // User needs to click verify button
+            }
+        });
 
         res.json({
             success: true,
-            message: `
-                ✅ Browser window opened!
-                
-                PLEASE FOLLOW THESE STEPS:
-                1. Login to your Pocket Option account
-                2. Solve CAPTCHA if required
-                3. Navigate to trading page:
-                   - Demo: https://pocketoption.com/en/cabinet/demo-quick-high-low/
-                   - Real: https://pocketoption.com/en/cabinet/quick-high-low/
-                4. Keep the browser window OPEN
-                5. Come back here and click "Verify Connection"
-                
-                IMPORTANT: DO NOT CLOSE THE BROWSER WINDOW!
-            `,
-            connectionId: user._id.toString()
+            message: '✅ Login completed! Please click "Verify Connection" to confirm.',
+            accountType: result.accountType,
+            needsVerification: true
         });
 
     } catch (error) {
-        console.error('❌ Connection start error:', error);
-        res.status(500).json({ error: error.message });
+        console.error('❌ Automated login error:', error);
+
+        res.status(500).json({
+            success: false,
+            error: 'Login failed',
+            message: error.message
+        });
     }
 });
 
 /**
  * @route   POST /api/users/connect-pocketoption/verify
- * @desc    Verify that the user is on the Pocket Option trading page and enable auto-trading
+ * @desc    Verify connection status - Returns modal-friendly response
  */
 router.post('/connect-pocketoption/verify', auth, async (req, res) => {
     try {
@@ -60,30 +87,38 @@ router.post('/connect-pocketoption/verify', auth, async (req, res) => {
 
         console.log(`🔍 Verifying connection for user: ${user.email}`);
 
+        // Check if session exists
+        const session = sessionManager.sessions.get(user._id.toString());
+        if (!session) {
+            return res.json({
+                success: false,
+                status: 'not_connected',
+                title: 'Not Connected',
+                message: 'No active browser session found. Please login first.',
+                modalType: 'error'
+            });
+        }
+
         // Check if user is on trading page
         const isOnTradingPage = await sessionManager.isOnTradingPage(user._id.toString());
 
         if (!isOnTradingPage) {
-            const session = sessionManager.sessions.get(user._id.toString());
-            const currentUrl = session?.page?.url() || 'No active session';
+            const currentUrl = session?.page?.url() || 'Unknown';
 
-            return res.status(400).json({
-                error: 'Not on Pocket Option trading page',
-                message: `The browser is currently at: ${currentUrl}`,
-                instructions: `
-                    Please navigate to:
-                    1. DEMO: https://pocketoption.com/en/cabinet/demo-quick-high-low/
-                    2. REAL: https://pocketoption.com/en/cabinet/quick-high-low/
-                    
-                    Then click Verify again. Do not close the window.
-                `
+            return res.json({
+                success: false,
+                status: 'not_ready',
+                title: 'Connection Failed',
+                message: 'Browser is not on the trading page yet. Please wait for login to complete.',
+                currentUrl,
+                modalType: 'warning'
             });
         }
 
-        // Get session info
-        const session = sessionManager.sessions.get(user._id.toString());
+        // Success - User is on trading page
         const currentUrl = session.page.url();
         const isDemo = currentUrl.includes('demo');
+        const accountType = isDemo ? 'demo' : 'real';
 
         // Update user connection status in DB
         await User.findByIdAndUpdate(user._id, {
@@ -93,25 +128,36 @@ router.post('/connect-pocketoption/verify', auth, async (req, res) => {
                 lastActivity: new Date(),
                 browserSessionId: `session_${user._id}`,
                 tradingPageUrl: currentUrl,
-                accountType: isDemo ? 'demo' : 'real',
+                accountType,
                 verified: true
             },
-            'tradingSettings.isAutoTrading': true // AUTO-ENABLE ON SUCCESS
+            'tradingSettings.isAutoTrading': true // AUTO-ENABLE
         });
+
+        console.log(`✅ Verified: ${user.email} → ${accountType.toUpperCase()} account`);
 
         res.json({
             success: true,
-            message: '✅ Pocket Option account connected and automation activated!',
+            status: 'connected',
+            title: `Connected to ${accountType.toUpperCase()} Account`,
+            message: `Your browser is connected and ready for auto-trading on ${isDemo ? 'DEMO' : 'REAL'} account.`,
             connection: {
                 isConnected: true,
-                accountType: isDemo ? 'demo' : 'real',
+                accountType,
                 tradingUrl: currentUrl
-            }
+            },
+            modalType: 'success'
         });
 
     } catch (error) {
         console.error('❌ Connection verify error:', error);
-        res.status(500).json({ error: error.message });
+        res.json({
+            success: false,
+            status: 'error',
+            title: 'Verification Error',
+            message: `Failed to verify connection: ${error.message}`,
+            modalType: 'error'
+        });
     }
 });
 

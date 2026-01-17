@@ -16,7 +16,11 @@ import {
     faToggleOn,
     faToggleOff,
     faTriangleExclamation,
-    faRefresh
+    faRefresh,
+    faPaperPlane,
+    faRocket,
+    faPlus,
+    faXmark
 } from '@fortawesome/free-solid-svg-icons';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
@@ -29,12 +33,16 @@ const Dashboard = () => {
     const [connectionStatus, setConnectionStatus] = useState(false);
     const [trades, setTrades] = useState([]);
     const [activeTradesCount, setActiveTradesCount] = useState(0);
-    const [isConnecting, setIsConnecting] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [isAutoTrading, setIsAutoTrading] = useState(user?.tradingSettings?.isAutoTrading || false);
     const [defaultAmount, setDefaultAmount] = useState(user?.tradingSettings?.defaultAmount || 1);
     const [martingaleEnabled, setMartingaleEnabled] = useState(user?.tradingSettings?.martingaleEnabled !== false);
     const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
+
+    // Login Modal State
+    const [showLoginModal, setShowLoginModal] = useState(false);
+    const [loginForm, setLoginForm] = useState({ email: '', password: '', accountType: 'DEMO' });
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
 
     useEffect(() => {
         // Fetch current user settings to ensure sync
@@ -52,7 +60,22 @@ const Dashboard = () => {
                 console.error("Error fetching profile:", err);
             }
         };
+
+        const fetchStatus = async () => {
+            try {
+                const response = await api.get('/users/connect-pocketoption/status');
+                if (response.data.success && response.data.status) {
+                    // Check if BOTH the DB says connected AND the server has an active session
+                    const isConnected = response.data.status.connected && response.data.status.sessionActive;
+                    setConnectionStatus(isConnected);
+                }
+            } catch (err) {
+                console.error("Error fetching status:", err);
+            }
+        };
+
         fetchUserData();
+        fetchStatus();
 
         // Connect to socket
         const newSocket = io('/', {
@@ -96,25 +119,44 @@ const Dashboard = () => {
         return () => newSocket.close();
     }, []);
 
-    const handleConnectPocketOption = async () => {
-        setIsConnecting(true);
+    const handleConnectAccount = async () => {
+        if (!loginForm.email || !loginForm.password) {
+            showModal({ title: 'Missing Info', message: 'Please enter both email and password.', type: 'error' });
+            return;
+        }
+
+        setIsLoggingIn(true);
         try {
-            const response = await api.post('/users/connect-pocketoption/start');
+            const response = await api.post('/users/connect-pocketoption/login', loginForm);
             if (response.data.success) {
+                setShowLoginModal(false);
                 showModal({
-                    title: 'Browser Launched',
-                    message: response.data.message,
+                    title: 'Login Initiated',
+                    message: 'Browser is starting. Please wait for the connection to be established.',
                     type: 'success'
                 });
+
+                // Poll for status
+                let attempts = 0;
+                const interval = setInterval(async () => {
+                    attempts++;
+                    const statusRes = await api.get('/users/connect-pocketoption/status');
+                    if (statusRes.data.success && statusRes.data.status.connected) {
+                        setConnectionStatus(true);
+                        setIsAutoTrading(true);
+                        clearInterval(interval);
+                    }
+                    if (attempts > 30) clearInterval(interval);
+                }, 2000);
             }
         } catch (error) {
             showModal({
-                title: 'Connection Error',
-                message: error.response?.data?.error || error.message,
+                title: 'Login Failed',
+                message: error.response?.data?.message || 'Failed to start automated login.',
                 type: 'error'
             });
         } finally {
-            setIsConnecting(false);
+            setIsLoggingIn(false);
         }
     };
 
@@ -124,7 +166,7 @@ const Dashboard = () => {
             const response = await api.post('/users/connect-pocketoption/verify');
             if (response.data.success) {
                 setConnectionStatus(true);
-                setIsAutoTrading(true); // Verifying typically auto-enables
+                setIsAutoTrading(true);
                 showModal({
                     title: 'System Verified',
                     message: response.data.message,
@@ -132,16 +174,9 @@ const Dashboard = () => {
                 });
             }
         } catch (error) {
-            const data = error.response?.data;
-            const fullMessage = [
-                data?.error,
-                data?.message,
-                data?.instructions
-            ].filter(Boolean).join('\n\n');
-
             showModal({
                 title: 'Verification Failed',
-                message: fullMessage || error.message,
+                message: error.response?.data?.message || error.message,
                 type: 'warning'
             });
         } finally {
@@ -158,18 +193,9 @@ const Dashboard = () => {
             });
             if (response.data.success) {
                 setIsAutoTrading(newValue);
-                showModal({
-                    title: newValue ? 'Automation Resumed' : 'Automation Paused',
-                    message: newValue ? 'The bot is now monitoring for signals.' : 'Signal processing has been temporarily suspended.',
-                    type: 'info'
-                });
             }
         } catch (error) {
-            showModal({
-                title: 'Settings Error',
-                message: error.response?.data?.error || error.message,
-                type: 'error'
-            });
+            showModal({ title: 'Error', message: error.message, type: 'error' });
         } finally {
             setIsUpdatingSettings(false);
         }
@@ -185,18 +211,10 @@ const Dashboard = () => {
                 }
             });
             if (response.data.success) {
-                showModal({
-                    title: 'Settings Saved',
-                    message: `Initial trade amount set to $${defaultAmount} and Martingale ${martingaleEnabled ? 'enabled' : 'disabled'}.`,
-                    type: 'success'
-                });
+                showModal({ title: 'Saved', message: 'Settings updated successfully.', type: 'success' });
             }
         } catch (error) {
-            showModal({
-                title: 'Save Failed',
-                message: error.response?.data?.error || error.message,
-                type: 'error'
-            });
+            showModal({ title: 'Error', message: error.message, type: 'error' });
         } finally {
             setIsUpdatingSettings(false);
         }
@@ -227,7 +245,19 @@ const Dashboard = () => {
             {/* Main Content */}
             <main className="p-6 max-w-7xl mx-auto space-y-8">
 
-                {/* Automation & Status Section */}
+                {/* Warning Banner */}
+                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-4 animate-pulse">
+                    <div className="bg-red-500/20 p-3 rounded-full text-red-500">
+                        <FontAwesomeIcon icon={faTriangleExclamation} size="lg" />
+                    </div>
+                    <div>
+                        <h4 className="text-red-500 font-bold uppercase tracking-wider text-sm">Action Required</h4>
+                        <p className="text-gray-400 text-xs">
+                            Make sure you have selected the <strong className="text-white">EURUSD</strong> chart in your Pocket Option account. The bot will no longer select the asset automatically.
+                        </p>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Connection Panel */}
                     <div className={`lg:col-span-2 rounded-2xl p-6 border transition-all ${connectionStatus ? 'bg-success/5 border-success/20' : 'bg-yellow-500/5 border-yellow-500/20'}`}>
@@ -238,43 +268,54 @@ const Dashboard = () => {
                                 </div>
                                 <div>
                                     <h3 className={`text-xl font-black ${connectionStatus ? 'text-success' : 'text-yellow-500'}`}>
-                                        {connectionStatus ? 'PLATFORM CONNECTED' : 'CONNECTION REQUIRED'}
+                                        {connectionStatus ? 'CONNECTED & VERIFIED' : 'CONNECTION REQUIRED'}
                                     </h3>
                                     <p className="text-sm text-gray-400">
                                         {connectionStatus
-                                            ? 'Auto-trading bridge is actively synchronized with Pocket Option.'
-                                            : 'Please establish a browser session to begin receiving signals.'}
+                                            ? 'Auto-trading bridge is active.'
+                                            : 'Please connect your account or verify the current session.'}
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="flex gap-3">
+                            <div className="flex flex-col gap-3">
                                 {!connectionStatus ? (
-                                    <>
+                                    <div className="flex flex-col gap-2">
                                         <button
-                                            onClick={handleConnectPocketOption}
-                                            disabled={isConnecting}
-                                            className="bg-accent hover:bg-accent/90 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-accent/20 active:scale-95 disabled:opacity-50"
+                                            onClick={() => setShowLoginModal(true)}
+                                            className="bg-accent hover:bg-accent/90 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-accent/30 active:scale-95 uppercase tracking-widest text-sm"
                                         >
-                                            <FontAwesomeIcon icon={faGlobe} className="mr-2" />
-                                            {isConnecting ? 'Opening...' : 'Launch Browser'}
+                                            <FontAwesomeIcon icon={faRocket} className="mr-3" />
+                                            Connect Account
                                         </button>
                                         <button
                                             onClick={handleVerifyConnection}
                                             disabled={isVerifying}
-                                            className="bg-success hover:bg-success/90 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-success/20 active:scale-95 disabled:opacity-50"
+                                            className="text-gray-400 hover:text-white text-[10px] uppercase font-bold tracking-widest flex items-center justify-center gap-2"
                                         >
-                                            <FontAwesomeIcon icon={faCheckCircle} className="mr-2" />
-                                            {isVerifying ? 'Verifying...' : 'Verify'}
+                                            <FontAwesomeIcon icon={faRefresh} className={isVerifying ? 'animate-spin' : ''} />
+                                            {isVerifying ? 'Checking...' : 'Manually Verify Session'}
                                         </button>
-                                    </>
+                                    </div>
                                 ) : (
-                                    <button
-                                        onClick={handleConnectPocketOption}
-                                        className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold px-4 py-2 rounded-xl transition-all text-sm"
-                                    >
-                                        <FontAwesomeIcon icon={faRefresh} className="mr-2" /> Reconnect
-                                    </button>
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-[10px] font-black text-success uppercase tracking-widest bg-success/10 px-3 py-1 rounded-full border border-success/20">
+                                            LIVE SYNC ACTIVE
+                                        </span>
+                                        <button
+                                            onClick={handleVerifyConnection}
+                                            disabled={isVerifying}
+                                            className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold px-4 py-2 rounded-xl transition-all text-[10px] uppercase tracking-widest"
+                                        >
+                                            <FontAwesomeIcon icon={faRefresh} className={`mr-2 ${isVerifying ? 'animate-spin' : ''}`} /> Re-Verify
+                                        </button>
+                                        <button
+                                            onClick={() => setShowLoginModal(true)}
+                                            className="text-gray-500 hover:text-white text-[10px] uppercase font-bold"
+                                        >
+                                            Switch
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -291,7 +332,6 @@ const Dashboard = () => {
                                 onClick={toggleAutoTrading}
                                 disabled={isUpdatingSettings || !connectionStatus}
                                 className={`text-4xl transition-all ${!connectionStatus ? 'opacity-20 cursor-not-allowed' : 'hover:scale-110 active:scale-90 text-blue-500'}`}
-                                title={!connectionStatus ? "Connect to platform first" : "Toggle Automation"}
                             >
                                 <FontAwesomeIcon icon={isAutoTrading ? faToggleOn : faToggleOff} className={isAutoTrading ? 'text-blue-500' : 'text-gray-700'} />
                             </button>
@@ -299,11 +339,6 @@ const Dashboard = () => {
                         <div className="text-2xl font-black text-white mb-2">
                             {isAutoTrading ? 'ACTIVE' : 'DISABLED'}
                         </div>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
-                            {isAutoTrading
-                                ? 'Bot is executing signals in real-time'
-                                : 'Automation paused - Manual mode'}
-                        </p>
                     </div>
                 </div>
 
@@ -317,7 +352,6 @@ const Dashboard = () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {/* Initial Amount */}
                         <div className="space-y-3">
                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block">Initial Trade Amount ($)</label>
                             <div className="relative group">
@@ -330,13 +364,10 @@ const Dashboard = () => {
                                     onChange={(e) => setDefaultAmount(e.target.value)}
                                     className="w-full bg-primary border border-gray-700 rounded-xl py-4 pl-12 pr-4 text-white font-bold focus:border-accent outline-none transition-all"
                                     placeholder="1.00"
-                                    min="1"
-                                    step="1"
                                 />
                             </div>
                         </div>
 
-                        {/* Martingale Toggle */}
                         <div className="space-y-3">
                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block">Martingale Strategy</label>
                             <button
@@ -351,92 +382,27 @@ const Dashboard = () => {
                             </button>
                         </div>
 
-                        {/* Save Action */}
                         <div className="flex items-end">
                             <button
                                 onClick={handleSaveTradingSettings}
                                 disabled={isUpdatingSettings}
                                 className="w-full bg-accent hover:bg-accent/90 text-white font-black py-4 rounded-xl transition-all shadow-xl shadow-accent/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                             >
-                                {isUpdatingSettings ? (
-                                    <FontAwesomeIcon icon={faRefresh} spin />
-                                ) : (
-                                    <FontAwesomeIcon icon={faCircleCheck} />
-                                )}
+                                {isUpdatingSettings ? <FontAwesomeIcon icon={faRefresh} spin /> : <FontAwesomeIcon icon={faCircleCheck} />}
                                 SAVE CONFIGURATION
                             </button>
                         </div>
-                    </div>
-
-                    {martingaleEnabled && (
-                        <div className="mt-6 p-4 bg-accent/5 border border-accent/10 rounded-xl">
-                            <p className="text-[10px] text-gray-400 flex items-center gap-2">
-                                <FontAwesomeIcon icon={faTriangleExclamation} className="text-yellow-500" />
-                                <span>MARTINGALE ACTIVE: Amount will multiply by 2.0x on each loss (Level 0-6). Starting at: <b>${defaultAmount}</b></span>
-                            </p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-secondary p-8 rounded-3xl border border-gray-800 hover:border-purple-500/30 transition-all shadow-xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <FontAwesomeIcon icon={faChartSimple} size="4x" className="text-white" />
-                        </div>
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="p-4 bg-purple-500/10 rounded-2xl text-purple-400">
-                                <FontAwesomeIcon icon={faChartSimple} size="xl" />
-                            </div>
-                            <span className="text-[10px] text-gray-500 font-black tracking-[0.2em] uppercase">Execution History</span>
-                        </div>
-                        <div className="text-4xl font-black text-white mb-2">{activeTradesCount}</div>
-                        <div className="flex items-center gap-2 text-xs">
-                            <span className="text-gray-600 font-bold">Total trades processed</span>
-                        </div>
-                    </div>
-
-                    <div className="bg-secondary p-8 rounded-3xl border border-gray-800 hover:border-accent/50 cursor-pointer transition-all shadow-xl relative overflow-hidden group">
-                        <Link to="/signals" className="block h-full">
-                            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <FontAwesomeIcon icon={faSignal} size="4x" className="text-white" />
-                            </div>
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="p-4 bg-accent/10 rounded-2xl text-accent group-hover:bg-accent group-hover:text-white transition-all">
-                                    <FontAwesomeIcon icon={faSignal} size="xl" />
-                                </div>
-                                <span className="text-[10px] text-gray-500 font-black tracking-[0.2em] uppercase">Signal Center</span>
-                            </div>
-                            <div className="text-2xl font-black text-white mb-2 flex items-center gap-3">
-                                Live Logs <span className="group-hover:translate-x-2 transition-transform">&rarr;</span>
-                            </div>
-                            <div className="text-xs text-gray-600 font-bold">Review incoming signal stream</div>
-                        </Link>
-                    </div>
-                </div>
-
-                {/* Section Header */}
-                <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-3">
-                        <span className="h-2 w-10 bg-accent rounded-full"></span>
-                        RECENT ACTIVITY
-                    </h3>
-                    <Link to="/signals" className="text-[10px] font-black text-accent uppercase tracking-widest hover:underline">View All &rarr;</Link>
-                </div>
-
-                {/* Risk Management Tip */}
-                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-4 flex items-center gap-4">
-                    <div className="bg-yellow-500/20 p-3 rounded-xl text-yellow-500">
-                        <FontAwesomeIcon icon={faTriangleExclamation} />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest mb-1">Risk Management Advice</p>
-                        <p className="text-[11px] text-gray-400">Please set your "Initial Amount" based on your actual available balance on the platform. We recommend a starting stake of no more than 1-2% of your total balance to handle potential Martingale sequences safely.</p>
                     </div>
                 </div>
 
                 {/* Recent Activity Table */}
                 <div className="bg-secondary rounded-3xl border border-gray-800 shadow-2xl overflow-hidden">
+                    <div className="p-8 border-b border-gray-800">
+                        <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-3">
+                            <span className="h-2 w-10 bg-accent rounded-full"></span>
+                            RECENT ACTIVITY
+                        </h3>
+                    </div>
                     {trades.length > 0 ? (
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
@@ -452,24 +418,16 @@ const Dashboard = () => {
                                 <tbody className="divide-y divide-gray-800">
                                     {trades.map((trade) => (
                                         <tr key={trade._id} className="hover:bg-white/[0.02] transition-colors group">
-                                            <td className="px-8 py-5">
-                                                <div className="font-black text-white group-hover:text-accent transition-colors">{trade.asset}</div>
-                                                <div className="text-[10px] text-gray-600 font-bold uppercase">{trade.source} Trade</div>
-                                            </td>
+                                            <td className="px-8 py-5 text-white font-bold">{trade.asset}</td>
                                             <td className="px-8 py-5">
                                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black ${trade.direction === 'CALL' ? 'bg-success/10 text-success' : 'bg-red-500/10 text-red-500'}`}>
                                                     {trade.direction}
                                                 </span>
                                             </td>
                                             <td className="px-8 py-5 font-bold text-white">${trade.amount}</td>
-                                            <td className="px-8 py-5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`h-1.5 w-1.5 rounded-full ${trade.status === 'completed' ? 'bg-success' : 'bg-yellow-500 animate-pulse'}`}></div>
-                                                    <span className="text-xs font-bold text-gray-400 capitalize">{trade.status}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 text-right text-xs text-gray-500 font-mono">
-                                                {new Date(trade.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            <td className="px-8 py-5 text-gray-400 text-xs">{trade.status}</td>
+                                            <td className="px-8 py-5 text-right text-xs text-gray-500">
+                                                {new Date(trade.createdAt).toLocaleTimeString()}
                                             </td>
                                         </tr>
                                     ))}
@@ -477,19 +435,73 @@ const Dashboard = () => {
                             </table>
                         </div>
                     ) : (
-                        <div className="p-12 text-center space-y-4">
-                            <div className="h-20 w-20 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto text-gray-700">
-                                <FontAwesomeIcon icon={faGear} size="2x" className="animate-spin-slow" />
-                            </div>
-                            <div>
-                                <p className="text-white font-bold">No active history found</p>
-                                <p className="text-gray-500 text-sm max-w-xs mx-auto">Connect your account and enable auto-trading to see live execution logs here.</p>
-                            </div>
-                        </div>
+                        <div className="p-12 text-center text-gray-500">No recent activity.</div>
                     )}
                 </div>
-
             </main>
+
+            {/* Login Modal */}
+            {showLoginModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-primary/90 backdrop-blur-sm">
+                    <div className="bg-secondary w-full max-w-md rounded-3xl border border-gray-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+                        <div className="p-8 border-b border-gray-800 flex justify-between items-center">
+                            <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter">
+                                Connect <span className="text-accent underline decoration-2 underline-offset-4">Account</span>
+                            </h3>
+                            <button onClick={() => setShowLoginModal(false)} className="text-gray-500 hover:text-white transition-colors">
+                                <FontAwesomeIcon icon={faXmark} size="lg" />
+                            </button>
+                        </div>
+                        <div className="p-8 space-y-6">
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Platform Email</label>
+                                <input
+                                    type="email"
+                                    value={loginForm.email}
+                                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                                    className="w-full bg-primary border border-gray-700 rounded-xl py-4 px-4 text-white outline-none focus:border-accent transition-all"
+                                    placeholder="your@email.com"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Platform Password</label>
+                                <input
+                                    type="password"
+                                    value={loginForm.password}
+                                    onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                                    className="w-full bg-primary border border-gray-700 rounded-xl py-4 px-4 text-white outline-none focus:border-accent transition-all"
+                                    placeholder="••••••••"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Account Type</label>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <button
+                                        onClick={() => setLoginForm({ ...loginForm, accountType: 'DEMO' })}
+                                        className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${loginForm.accountType === 'DEMO' ? 'bg-accent text-primary' : 'bg-gray-800 text-gray-500'}`}
+                                    >
+                                        Demo
+                                    </button>
+                                    <button
+                                        onClick={() => setLoginForm({ ...loginForm, accountType: 'REAL' })}
+                                        className={`py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${loginForm.accountType === 'REAL' ? 'bg-success text-primary' : 'bg-gray-800 text-gray-500'}`}
+                                    >
+                                        Real
+                                    </button>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleConnectAccount}
+                                disabled={isLoggingIn}
+                                className="w-full bg-accent hover:bg-accent/90 text-primary font-black py-5 rounded-2xl uppercase tracking-widest text-sm shadow-xl shadow-accent/20 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
+                            >
+                                {isLoggingIn ? <FontAwesomeIcon icon={faRefresh} spin /> : <FontAwesomeIcon icon={faRocket} />}
+                                {isLoggingIn ? 'Establishing Connection...' : 'Launch Automated Browser'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

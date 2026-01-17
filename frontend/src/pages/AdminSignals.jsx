@@ -49,8 +49,8 @@ const AdminSignals = () => {
             if (response.data.success) {
                 showModal({
                     title: 'Signal Broadcasted',
-                    message: `✅ Signal sent successfully!\n\nAsset: ${signalForm.asset}\nDirection: ${signalForm.direction.toUpperCase()}\nTime: ${signalForm.time}s`,
-                    type: 'success'
+                    message: `✅ Signal sent successfully!\n\nReached: ${response.data.broadcastedTo} users\nErrors: ${response.data.errors}\n\nAsset: ${signalForm.asset}\nDirection: ${signalForm.direction.toUpperCase()}\nTime: ${signalForm.time}s`,
+                    type: response.data.broadcastedTo > 0 ? 'success' : 'warning'
                 });
                 // Reset form
                 setSignalForm({

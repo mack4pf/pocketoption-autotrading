@@ -1,0 +1,18 @@
+{
+    "manifest_version": 3,
+    "name": "Niels Autotrade Session Capture",
+    "version": "1.0",
+    "description": "Capture Pocket Option sessions and sync with Niels Autotrade.",
+    "permissions": [
+        "cookies",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://*.pocketoption.com/*",
+        "https://harlan-echolalic-ulysses.ngrok-free.dev/*"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": "icon.png"
+    }
+}

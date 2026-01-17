@@ -53,12 +53,14 @@ router.post('/create', requireAdminSecret, async (req, res) => {
         };
 
         // Broadcast to all users
-        tradingEngine.broadcastSignal(signalData);
+        const broadcastResult = await tradingEngine.broadcastSignal(signalData);
 
         res.json({
             success: true,
-            message: 'Signal received',
+            message: 'Signal received and broadcasted',
             signalId,
+            broadcastedTo: broadcastResult.placed,
+            errors: broadcastResult.errors,
             converted: { asset, direction, time }
         });
 

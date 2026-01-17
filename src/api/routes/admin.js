@@ -4,6 +4,7 @@ const adminAuth = require('../../middleware/adminAuth');
 const User = require('../../models/User');
 const Trade = require('../../models/Trade');
 const AccessCode = require('../../models/AccessCode');
+const SystemSettings = require('../../models/SystemSettings');
 
 // Dashboard stats
 router.get('/dashboard', adminAuth, async (req, res) => {
@@ -232,6 +233,53 @@ router.post('/create-admin', adminAuth, async (req, res) => {
             admin: { email: newAdmin.email, role: newAdmin.role, password }
         });
 
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get system settings
+router.get('/settings', adminAuth, async (req, res) => {
+    try {
+        const settings = await SystemSettings.find();
+        const settingsMap = settings.reduce((acc, curr) => {
+            acc[curr.key] = curr.value;
+            return acc;
+        }, {});
+
+        // Ensure defaults for specific settings if not present
+        if (settingsMap['martingaleEnabledGlobal'] === undefined) {
+            settingsMap['martingaleEnabledGlobal'] = true;
+        }
+
+        res.json({
+            success: true,
+            settings: settingsMap
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update system setting
+router.put('/settings', adminAuth, async (req, res) => {
+    try {
+        const { key, value } = req.body;
+
+        if (!key) {
+            return res.status(400).json({ error: 'Key is required' });
+        }
+
+        await SystemSettings.findOneAndUpdate(
+            { key },
+            { value, updatedBy: req.user._id },
+            { upsert: true, new: true }
+        );
+
+        res.json({
+            success: true,
+            message: `Setting ${key} updated successfully`
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
